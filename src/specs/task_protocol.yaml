@@ -1,0 +1,63 @@
+# Sample protocol: a task offer/accept/reject workflow.
+#
+# States: IDLE -> OFFERED -> {ACCEPTED -> COMPLETED, REJECTED, CANCELLED, EXPIRED}
+# This spec is the single declarative source the state machine and kernel use.
+name: task-offer-protocol
+version: "1.0"
+initial_status: IDLE
+max_message_age_seconds: 300
+
+transitions:
+  - action: OFFER
+    from_status: IDLE
+    to_status: OFFERED
+    required_capability: task.offer
+    required_evidence: []
+    effects:
+      - notify_worker
+      - create_offer_record
+
+  - action: ACCEPT
+    from_status: OFFERED
+    to_status: ACCEPTED
+    required_capability: task.accept
+    required_evidence:
+      - worker_identity
+    effects:
+      - assign_task
+      - notify_offerer
+
+  - action: REJECT
+    from_status: OFFERED
+    to_status: REJECTED
+    required_capability: task.reject
+    required_evidence: []
+    effects:
+      - notify_offerer
+      - release_offer
+
+  - action: CANCEL
+    from_status: OFFERED
+    to_status: CANCELLED
+    required_capability: task.cancel
+    required_evidence: []
+    effects:
+      - release_offer
+
+  - action: COMPLETE
+    from_status: ACCEPTED
+    to_status: COMPLETED
+    required_capability: task.complete
+    required_evidence:
+      - completion_proof
+    effects:
+      - settle_task
+      - notify_offerer
+
+  - action: EXPIRE
+    from_status: OFFERED
+    to_status: EXPIRED
+    required_capability: task.expire
+    required_evidence: []
+    effects:
+      - release_offer

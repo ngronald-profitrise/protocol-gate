@@ -1,0 +1,185 @@
+# Full observability + inference stack for the Protocol Gate harness.
+#
+# Bring the whole stack up with:  make up   (or)  docker compose -f infra/docker-compose.yml up -d
+#
+# Services
+#   ollama       - local LLM inference (the untrusted proposer)
+#   gate-api     - the FastAPI service exposing the deterministic gate
+#   prometheus   - metrics scraping + storage
+#   grafana      - dashboards (auto-provisioned)
+#   jaeger       - distributed tracing UI (OTLP ingest)
+#   loki         - log aggregation
+#   promtail     - ships container logs into Loki
+#   otel-collector - fans traces/metrics out to Jaeger/Prometheus
+#   mlflow       - experiment tracking for control-vs-experiment runs
+#
+# All services join the ``gate-net`` bridge network and use named volumes so
+# state survives ``docker compose restart``.
+name: protocol-gate
+
+services:
+  ollama:
+    image: ollama/ollama:0.3.14
+    container_name: pg-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    networks:
+      - gate-net
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  gate-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: pg-gate-api
+    depends_on:
+      ollama:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+    environment:
+      PG_OLLAMA_HOST: "http://ollama:11434"
+      PG_OTLP_ENDPOINT: "http://otel-collector:4317"
+      PG_LOG_LEVEL: "INFO"
+      PG_ENABLE_TRACING: "true"
+    ports:
+      - "8000:8000"
+    networks:
+      - gate-net
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live')\" || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: pg-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - gate-net
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: pg-grafana
+    depends_on:
+      - prometheus
+      - loki
+      - jaeger
+    environment:
+      GF_SECURITY_ADMIN_USER: "admin"
+      GF_SECURITY_ADMIN_PASSWORD: "admin"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    networks:
+      - gate-net
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    container_name: pg-jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"   # UI
+      - "14268:14268"   # collector (thrift)
+    networks:
+      - gate-net
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.1.1
+    container_name: pg-loki
+    command: ["-config.file=/etc/loki/loki-config.yaml"]
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+    networks:
+      - gate-net
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.1.1
+    container_name: pg-promtail
+    command: ["-config.file=/etc/promtail/promtail-config.yaml"]
+    volumes:
+      - ./loki/promtail-config.yaml:/etc/promtail/promtail-config.yaml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+    networks:
+      - gate-net
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.109.0
+    container_name: pg-otel-collector
+    command: ["--config=/etc/otelcol/otelcol-config.yaml"]
+    volumes:
+      - ./otel-collector/otelcol-config.yaml:/etc/otelcol/otelcol-config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8889:8889"   # Prometheus exporter for collector metrics
+    depends_on:
+      - jaeger
+    networks:
+      - gate-net
+    restart: unless-stopped
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.16.2
+    container_name: pg-mlflow
+    command: >
+      mlflow server
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --default-artifact-root /mlflow/artifacts
+      --host 0.0.0.0
+      --port 5000
+    volumes:
+      - mlflow-data:/mlflow
+    ports:
+      - "5000:5000"
+    networks:
+      - gate-net
+    restart: unless-stopped
+
+networks:
+  gate-net:
+    driver: bridge
+
+volumes:
+  ollama-models:
+  prometheus-data:
+  grafana-data:
+  loki-data:
+  mlflow-data:
