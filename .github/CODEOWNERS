@@ -1,0 +1,8 @@
+# Default owner for everything in this repository.
+*       @ngronald-profitrise
+
+# The kernel and adapters are security-critical — always require owner review.
+/src/protocol_gate/   @ngronald-profitrise
+/src/adapters/        @ngronald-profitrise
+/proofs/              @ngronald-profitrise
+/.github/workflows/   @ngronald-profitrise
