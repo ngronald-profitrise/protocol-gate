@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question / Discussion
+    url: https://github.com/ngronald-profitrise/protocol-gate/discussions
+    about: Ask usage or design questions here.
+  - name: Security vulnerability
+    url: https://github.com/ngronald-profitrise/protocol-gate/security/advisories/new
+    about: Report vulnerabilities privately — do NOT open a public issue.

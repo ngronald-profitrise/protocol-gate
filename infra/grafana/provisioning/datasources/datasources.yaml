@@ -1,0 +1,27 @@
+# Grafana datasource provisioning. Loaded automatically at startup.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    uid: prometheus
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s
+
+  - name: Loki
+    type: loki
+    access: proxy
+    uid: loki
+    url: http://loki:3100
+    jsonData:
+      maxLines: 1000
+
+  - name: Jaeger
+    type: jaeger
+    access: proxy
+    uid: jaeger
+    url: http://jaeger:16686

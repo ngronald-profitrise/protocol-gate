@@ -1,0 +1,43 @@
+name: Research finding
+description: Share a finding about the security model, an attack, or a formal result
+title: "research: "
+labels: ["research"]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of finding
+      options:
+        - New attack / adversarial scenario
+        - Bypass of the guarantee
+        - Formal verification result
+        - Performance / latency finding
+        - Observability / metric finding
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What did you find?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence / reproduction
+      description: Scenario, test, TLC output, benchmark numbers, etc.
+    validations:
+      required: true
+  - type: textarea
+    id: implications
+    attributes:
+      label: Implications
+      description: What does this mean for the design or the guarantee?
+  - type: checkboxes
+    id: disclosure
+    attributes:
+      label: Disclosure
+      options:
+        - label: If this is an exploitable bypass, I understand I should follow SECURITY.md instead of posting publicly.

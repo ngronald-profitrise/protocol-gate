@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-type:
+    name: Lint & type check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install (dev extras)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,bench]"
+      - name: Ruff
+        run: ruff check .
+      - name: Black (check)
+        run: black --check .
+      - name: Mypy
+        run: mypy src
+
+  test:
+    name: Tests (unit + property + integration)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,bench]"
+      - name: Run test suite
+        run: pytest -ra
+
+  proofs:
+    name: Formal verification (TLA+/TLC)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Show Java version (pre-installed on ubuntu-latest)
+        run: java -version
+      - name: Download TLA+ tools
+        run: |
+          curl -sSL -o tla2tools.jar \
+            https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
+      - name: Parse spec (SANY)
+        working-directory: proofs
+        run: java -cp ../tla2tools.jar tla2sany.SANY ProtocolGate.tla
+      - name: Model check (TLC)
+        working-directory: proofs
+        run: java -cp ../tla2tools.jar tlc2.TLC -config ProtocolGate.cfg ProtocolGate.tla
+
+  experiments:
+    name: A/B experiment smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,bench]"
+      - name: Run control-vs-experiment comparison
+        env:
+          PYTHONPATH: src:.
+        run: python -m experiments.runner
